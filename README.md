@@ -11,24 +11,10 @@
 
 ---
 
-## 실행
-
-Python 3.10 이상, macOS(Apple Silicon)에서 확인했습니다.
-
-```
-cd rl_landing
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python game.py
-```
-
-전용 창을 직접 띄우므로 `mjpython`이 아니라 `python`으로 실행합니다. 창이 뜨면 한 번 클릭해 포커스를 잡은 뒤 키를 누르세요.
-
-```
-.venv/bin/python game.py --speed 0.5      # 0.5배속으로 시작
-```
 
 ## 조작
+
+0.5배로 감상 추천 ㅋ
 
 | 키 | 땅 위 | 공중 |
 |---|---|---|
