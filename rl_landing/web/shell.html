@@ -1,0 +1,167 @@
+<title>Cold-Gas Roadster</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* 한 화면 게임: 3D 뷰가 전체를 채우고, 계기판(왼쪽 위)·가스 게이지(아래)·조작표(오른쪽 위)가 얹힌다.
+     밝은 활주로 장면 위에 짙은 유리 계기판 한 가지 모습으로 고정 (테마 전환 없음) */
+  :root {
+    color-scheme: dark;
+    --panel: rgba(16, 20, 27, 0.72);
+    --panel-line: rgba(170, 205, 235, 0.16);
+    --ink: #e8eef5;
+    --ink-dim: #93a1b2;
+    --vapor: #9fd3ff;          /* 냉가스 증기 */
+    --hazard: #ff9a2e;         /* 경사로 오렌지 */
+    --rl: #c6a8ff;             /* RL이 조종 중 */
+    --low: #ff5a4d;
+    --ok: #5fd68a;
+    --sky-top: #3f6fa8;
+    --sky-horizon: #c9d6e2;
+    --bg: #c9d6e2;
+    --display: "Saira Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--display); overflow: hidden; }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .panel { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+  /* 계기판 */
+  #cluster { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
+    padding: 12px 14px; display: grid; gap: 10px; min-width: 210px; pointer-events: none; }
+  #mode { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  #mode::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-dim); }
+  #mode[data-kind="assist"]::before { background: var(--vapor); }
+  #mode[data-kind="rl"]::before { background: var(--rl); box-shadow: 0 0 8px var(--rl); }
+  #mode[data-kind="rl"] { color: var(--rl); }
+  .readouts { display: grid; grid-template-columns: repeat(4, auto); gap: 4px 16px; }
+  .readouts dt { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+  .readouts dd { margin: 0; font-family: var(--mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+  .readouts dd small { font-size: 11px; color: var(--ink-dim); margin-left: 2px; }
+  .sub { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+
+  /* 가스 게이지 */
+  #gas { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    width: min(440px, calc(100% - 32px)); padding: 10px 12px; display: grid; gap: 6px; pointer-events: none; }
+  #gas-text { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+  .gauge { position: relative; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+  #gas-fill { height: 100%; width: 100%; border-radius: 5px; background: var(--vapor); transition: width 0.12s linear; }
+  #gas[data-level="ok"] #gas-fill { background: var(--ok); }
+  #gas[data-level="mid"] #gas-fill { background: var(--hazard); }
+  #gas[data-level="low"] #gas-fill { background: var(--low); }
+  #gas-mark { position: absolute; top: -2px; bottom: -2px; left: 52.6%; width: 2px; background: var(--ink); }
+
+  /* 메시지 */
+  #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 16px; font-size: 22px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+
+  /* 조작표 */
+  #help-toggle { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    font: 600 13px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+    padding: 8px 12px; cursor: pointer; }
+  #help-toggle:focus-visible, .pad button:focus-visible { outline: 2px solid var(--vapor); outline-offset: 2px; }
+  #help { position: fixed; top: calc(56px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    padding: 12px 14px; width: 300px; max-width: calc(100% - 32px); max-height: calc(100% - 140px); overflow-y: auto; }
+  #help h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); font-weight: 600; }
+  #help dl { margin: 0 0 12px; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; }
+  #help dt { font-family: var(--mono); font-size: 12px; color: var(--vapor); padding-top: 2px; }
+  #help dd { margin: 0; color: var(--ink); }
+  #help p { margin: 0; font-size: 13px; color: var(--ink-dim); line-height: 1.45; }
+
+  /* 터치 버튼 (손가락 입력 기기에서만) */
+  .pad { position: fixed; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); display: none; gap: 8px; }
+  .pad button { width: 54px; height: 54px; border-radius: 12px; font: 700 15px var(--display); color: var(--ink);
+    background: var(--panel); border: 1px solid var(--panel-line); touch-action: none; user-select: none; -webkit-user-select: none; }
+  .pad button.on { background: rgba(159, 211, 255, 0.28); border-color: var(--vapor); }
+  .pad button.wide { width: 74px; }
+  #pad-move { left: max(16px, env(safe-area-inset-left, 0px)); display: none; grid-template-columns: repeat(3, 54px); }
+  #pad-act { right: max(16px, env(safe-area-inset-right, 0px)); flex-direction: column; align-items: flex-end; }
+  #pad-act .row { display: flex; gap: 8px; }
+  @media (pointer: coarse) {
+    #pad-move { display: grid; } #pad-act { display: flex; }
+    #gas { width: min(300px, calc(100% - 32px)); }
+  }
+  @media (max-width: 560px) {
+    #cluster { min-width: 0; padding: 10px; } .readouts { grid-template-columns: repeat(2, auto); }
+    .readouts dd { font-size: 16px; } #toast { font-size: 17px; }
+  }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; padding-inline: max(16px, env(safe-area-inset-left, 0px));
+    background: var(--panel); font-size: 18px; letter-spacing: 0.04em; text-align: center; }
+  @media (prefers-reduced-motion: reduce) { #gas-fill { transition: none; } }
+</style>
+
+<canvas id="view" aria-label="3D view of the cold-gas roadster and its course"></canvas>
+
+<section id="cluster" class="panel" aria-live="polite">
+  <div id="mode" data-kind="ground">Drive</div>
+  <dl class="readouts">
+    <div><dt>Speed</dt><dd><span id="v-speed">0.0</span><small>m/s</small></dd></div>
+    <div><dt>Alt</dt><dd><span id="v-alt">0.00</span><small>m</small></dd></div>
+    <div><dt>Tilt</dt><dd><span id="v-tilt">0</span><small>°</small></dd></div>
+    <div><dt>Course</dt><dd><span id="v-x">0.0</span><small>m</small></dd></div>
+  </dl>
+  <div class="sub"><span>Sim speed <span id="v-time">×1</span></span><span>H · controls</span></div>
+</section>
+
+<section id="gas" class="panel" data-level="inf">
+  <div id="gas-text">Gas unlimited · T for real 190 g tank</div>
+  <div class="gauge"><div id="gas-fill"></div><div id="gas-mark" title="Gas needed for one flip (~100 g)" hidden></div></div>
+</section>
+
+<div id="toast" class="panel" hidden></div>
+
+<button id="help-toggle" class="panel" type="button">Controls</button>
+<aside id="help" class="panel" aria-label="Controls">
+  <h2>On the ground</h2>
+  <dl>
+    <dt>W / S</dt><dd>Drive forward / reverse</dd>
+    <dt>A / D</dt><dd>Steer</dd>
+    <dt>Q / E</dt><dd>Spin in place with the side nozzles</dd>
+    <dt>F / G</dt><dd>RL jump flip, sideways / forward</dd>
+  </dl>
+  <h2>In the air</h2>
+  <dl>
+    <dt>Space</dt><dd>Take off, climb</dd>
+    <dt>C</dt><dd>Land level and slow</dd>
+    <dt>W A S D</dt><dd>Tilt to move; let go to stop and hover</dd>
+    <dt>Q / E</dt><dd>Turn</dd>
+    <dt>L</dt><dd>RL auto-land</dd>
+    <dt>F</dt><dd>Air flip (0.8 m+), press again for a double</dd>
+    <dt>G</dt><dd>Air front flip (1.0 m+)</dd>
+  </dl>
+  <h2>Anytime</h2>
+  <dl>
+    <dt>X</dt><dd>Toss the car tumbling; RL catches it</dd>
+    <dt>T</dt><dd>Unlimited gas or the real 190 g tank</dd>
+    <dt>− / =</dt><dd>Slow motion 0.1× to 2×</dd>
+    <dt>1 2 3 4</dt><dd>Chase, side, wide, cockpit camera</dd>
+    <dt>Drag</dt><dd>Orbit (right-drag pans, wheel zooms); 5 recenters</dd>
+    <dt>R / P</dt><dd>Restart / pause</dd>
+  </dl>
+  <p>Course: ramp at 3 m, decks at 10 m and 12.5 m (30 and 60 cm), wall at 15 m, landing pad at 17.5 m. Car 40 × 20 cm, 2.8 kg, four 20 N nozzles under the wheels and four 2 N side nozzles, 15 ms valve delay.</p>
+</aside>
+
+<div id="pad-move" class="pad" aria-label="Move">
+  <span></span><button type="button" data-hold="W" aria-label="Forward">W</button><span></span>
+  <button type="button" data-hold="A" aria-label="Left">A</button><button type="button" data-hold="S" aria-label="Back">S</button><button type="button" data-hold="D" aria-label="Right">D</button>
+  <button type="button" data-hold="Q" aria-label="Turn left">Q</button><span></span><button type="button" data-hold="E" aria-label="Turn right">E</button>
+</div>
+<div id="pad-act" class="pad" aria-label="Actions">
+  <div class="row"><button type="button" class="wide" data-hold="SPACE">Up</button><button type="button" class="wide" data-hold="C">Land</button></div>
+  <div class="row"><button type="button" data-tap="F">Flip</button><button type="button" data-tap="G">Front</button><button type="button" data-tap="L">RL</button></div>
+  <div class="row"><button type="button" data-tap="X">Toss</button><button type="button" data-tap="T">Gas</button><button type="button" data-tap="R">Reset</button></div>
+</div>
+
+<div id="loading">Loading the RL autopilot…</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/*SIM_JS*/
+</script>
+<script>
+/*APP_JS*/
+</script>

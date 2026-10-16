@@ -1,0 +1,1001 @@
+<title>Cold-Gas Roadster</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* 한 화면 게임: 3D 뷰가 전체를 채우고, 계기판(왼쪽 위)·가스 게이지(아래)·조작표(오른쪽 위)가 얹힌다.
+     밝은 활주로 장면 위에 짙은 유리 계기판 한 가지 모습으로 고정 (테마 전환 없음) */
+  :root {
+    color-scheme: dark;
+    --panel: rgba(16, 20, 27, 0.72);
+    --panel-line: rgba(170, 205, 235, 0.16);
+    --ink: #e8eef5;
+    --ink-dim: #93a1b2;
+    --vapor: #9fd3ff;          /* 냉가스 증기 */
+    --hazard: #ff9a2e;         /* 경사로 오렌지 */
+    --rl: #c6a8ff;             /* RL이 조종 중 */
+    --low: #ff5a4d;
+    --ok: #5fd68a;
+    --sky-top: #3f6fa8;
+    --sky-horizon: #c9d6e2;
+    --bg: #c9d6e2;
+    --display: "Saira Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--display); overflow: hidden; }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .panel { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+  /* 계기판 */
+  #cluster { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
+    padding: 12px 14px; display: grid; gap: 10px; min-width: 210px; pointer-events: none; }
+  #mode { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  #mode::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-dim); }
+  #mode[data-kind="assist"]::before { background: var(--vapor); }
+  #mode[data-kind="rl"]::before { background: var(--rl); box-shadow: 0 0 8px var(--rl); }
+  #mode[data-kind="rl"] { color: var(--rl); }
+  .readouts { display: grid; grid-template-columns: repeat(4, auto); gap: 4px 16px; }
+  .readouts dt { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+  .readouts dd { margin: 0; font-family: var(--mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+  .readouts dd small { font-size: 11px; color: var(--ink-dim); margin-left: 2px; }
+  .sub { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+
+  /* 가스 게이지 */
+  #gas { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    width: min(440px, calc(100% - 32px)); padding: 10px 12px; display: grid; gap: 6px; pointer-events: none; }
+  #gas-text { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+  .gauge { position: relative; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+  #gas-fill { height: 100%; width: 100%; border-radius: 5px; background: var(--vapor); transition: width 0.12s linear; }
+  #gas[data-level="ok"] #gas-fill { background: var(--ok); }
+  #gas[data-level="mid"] #gas-fill { background: var(--hazard); }
+  #gas[data-level="low"] #gas-fill { background: var(--low); }
+  #gas-mark { position: absolute; top: -2px; bottom: -2px; left: 52.6%; width: 2px; background: var(--ink); }
+
+  /* 메시지 */
+  #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 16px; font-size: 22px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+
+  /* 조작표 */
+  #help-toggle { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    font: 600 13px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+    padding: 8px 12px; cursor: pointer; }
+  #help-toggle:focus-visible, .pad button:focus-visible { outline: 2px solid var(--vapor); outline-offset: 2px; }
+  #help { position: fixed; top: calc(56px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    padding: 12px 14px; width: 300px; max-width: calc(100% - 32px); max-height: calc(100% - 140px); overflow-y: auto; }
+  #help h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); font-weight: 600; }
+  #help dl { margin: 0 0 12px; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; }
+  #help dt { font-family: var(--mono); font-size: 12px; color: var(--vapor); padding-top: 2px; }
+  #help dd { margin: 0; color: var(--ink); }
+  #help p { margin: 0; font-size: 13px; color: var(--ink-dim); line-height: 1.45; }
+
+  /* 터치 버튼 (손가락 입력 기기에서만) */
+  .pad { position: fixed; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); display: none; gap: 8px; }
+  .pad button { width: 54px; height: 54px; border-radius: 12px; font: 700 15px var(--display); color: var(--ink);
+    background: var(--panel); border: 1px solid var(--panel-line); touch-action: none; user-select: none; -webkit-user-select: none; }
+  .pad button.on { background: rgba(159, 211, 255, 0.28); border-color: var(--vapor); }
+  .pad button.wide { width: 74px; }
+  #pad-move { left: max(16px, env(safe-area-inset-left, 0px)); display: none; grid-template-columns: repeat(3, 54px); }
+  #pad-act { right: max(16px, env(safe-area-inset-right, 0px)); flex-direction: column; align-items: flex-end; }
+  #pad-act .row { display: flex; gap: 8px; }
+  @media (pointer: coarse) {
+    #pad-move { display: grid; } #pad-act { display: flex; }
+    #gas { width: min(300px, calc(100% - 32px)); }
+  }
+  @media (max-width: 560px) {
+    #cluster { min-width: 0; padding: 10px; } .readouts { grid-template-columns: repeat(2, auto); }
+    .readouts dd { font-size: 16px; } #toast { font-size: 17px; }
+  }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; padding-inline: max(16px, env(safe-area-inset-left, 0px));
+    background: var(--panel); font-size: 18px; letter-spacing: 0.04em; text-align: center; }
+  @media (prefers-reduced-motion: reduce) { #gas-fill { transition: none; } }
+</style>
+
+<canvas id="view" aria-label="3D view of the cold-gas roadster and its course"></canvas>
+
+<section id="cluster" class="panel" aria-live="polite">
+  <div id="mode" data-kind="ground">Drive</div>
+  <dl class="readouts">
+    <div><dt>Speed</dt><dd><span id="v-speed">0.0</span><small>m/s</small></dd></div>
+    <div><dt>Alt</dt><dd><span id="v-alt">0.00</span><small>m</small></dd></div>
+    <div><dt>Tilt</dt><dd><span id="v-tilt">0</span><small>°</small></dd></div>
+    <div><dt>Course</dt><dd><span id="v-x">0.0</span><small>m</small></dd></div>
+  </dl>
+  <div class="sub"><span>Sim speed <span id="v-time">×1</span></span><span>H · controls</span></div>
+</section>
+
+<section id="gas" class="panel" data-level="inf">
+  <div id="gas-text">Gas unlimited · T for real 190 g tank</div>
+  <div class="gauge"><div id="gas-fill"></div><div id="gas-mark" title="Gas needed for one flip (~100 g)" hidden></div></div>
+</section>
+
+<div id="toast" class="panel" hidden></div>
+
+<button id="help-toggle" class="panel" type="button">Controls</button>
+<aside id="help" class="panel" aria-label="Controls">
+  <h2>On the ground</h2>
+  <dl>
+    <dt>W / S</dt><dd>Drive forward / reverse</dd>
+    <dt>A / D</dt><dd>Steer</dd>
+    <dt>Q / E</dt><dd>Spin in place with the side nozzles</dd>
+    <dt>F / G</dt><dd>RL jump flip, sideways / forward</dd>
+  </dl>
+  <h2>In the air</h2>
+  <dl>
+    <dt>Space</dt><dd>Take off, climb</dd>
+    <dt>C</dt><dd>Land level and slow</dd>
+    <dt>W A S D</dt><dd>Tilt to move; let go to stop and hover</dd>
+    <dt>Q / E</dt><dd>Turn</dd>
+    <dt>L</dt><dd>RL auto-land</dd>
+    <dt>F</dt><dd>Air flip (0.8 m+), press again for a double</dd>
+    <dt>G</dt><dd>Air front flip (1.0 m+)</dd>
+  </dl>
+  <h2>Anytime</h2>
+  <dl>
+    <dt>X</dt><dd>Toss the car tumbling; RL catches it</dd>
+    <dt>T</dt><dd>Unlimited gas or the real 190 g tank</dd>
+    <dt>− / =</dt><dd>Slow motion 0.1× to 2×</dd>
+    <dt>1 2 3 4</dt><dd>Chase, side, wide, cockpit camera</dd>
+    <dt>Drag</dt><dd>Orbit (right-drag pans, wheel zooms); 5 recenters</dd>
+    <dt>R / P</dt><dd>Restart / pause</dd>
+  </dl>
+  <p>Course: ramp at 3 m, decks at 10 m and 12.5 m (30 and 60 cm), wall at 15 m, landing pad at 17.5 m. Car 40 × 20 cm, 2.8 kg, four 20 N nozzles under the wheels and four 2 N side nozzles, 15 ms valve delay.</p>
+</aside>
+
+<div id="pad-move" class="pad" aria-label="Move">
+  <span></span><button type="button" data-hold="W" aria-label="Forward">W</button><span></span>
+  <button type="button" data-hold="A" aria-label="Left">A</button><button type="button" data-hold="S" aria-label="Back">S</button><button type="button" data-hold="D" aria-label="Right">D</button>
+  <button type="button" data-hold="Q" aria-label="Turn left">Q</button><span></span><button type="button" data-hold="E" aria-label="Turn right">E</button>
+</div>
+<div id="pad-act" class="pad" aria-label="Actions">
+  <div class="row"><button type="button" class="wide" data-hold="SPACE">Up</button><button type="button" class="wide" data-hold="C">Land</button></div>
+  <div class="row"><button type="button" data-tap="F">Flip</button><button type="button" data-tap="G">Front</button><button type="button" data-tap="L">RL</button></div>
+  <div class="row"><button type="button" data-tap="X">Toss</button><button type="button" data-tap="T">Gas</button><button type="button" data-tap="R">Reset</button></div>
+</div>
+
+<div id="loading">Loading the RL autopilot…</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// 냉가스 로드스터 시뮬레이션 코어 — 물리(강체·노즐·밸브 지연·가스·충돌) + 게임 로직 + RL 정책 실행
+// 화면과 분리되어 있어 브라우저와 Node(검증용) 양쪽에서 쓴다. game.py를 그대로 옮긴 것.
+const SIM = (() => {
+  // ===== 기체 (MuJoCo 모델과 같은 값) =====
+  const DT = 0.001, CTRL_EVERY = 10, DELAY_STEPS = 15;
+  const BX = 0.2, BY = 0.1, BZ = 0.05;
+  const M = 2.801, GRAV = 9.81;
+  const INERTIA = [0.01166947, 0.03969196, 0.04668976];   // 몸체 x·y·z축
+  const FLOW_PER_N = 1.3 / 0.5, TANK_G = 190.0;
+  const WHEEL_X = BX - 0.03, WHEEL_Y = BY - 0.02;
+  const NOZZLE_N = 20.0, SIDE_N = 2.0, YAW_ARM = 0.18;
+  // 노즐: [위치(몸체), 미는 방향(몸체), 최대 추력 N]  순서 = fl fr rl rr yfl yfr yrl yrr
+  const THRUSTERS = [
+    [[WHEEL_X, WHEEL_Y, -BZ], [0, 0, 1], NOZZLE_N],
+    [[WHEEL_X, -WHEEL_Y, -BZ], [0, 0, 1], NOZZLE_N],
+    [[-WHEEL_X, WHEEL_Y, -BZ], [0, 0, 1], NOZZLE_N],
+    [[-WHEEL_X, -WHEEL_Y, -BZ], [0, 0, 1], NOZZLE_N],
+    [[BX - 0.02, -BY, 0], [0, 1, 0], SIDE_N],
+    [[BX - 0.02, BY, 0], [0, -1, 0], SIDE_N],
+    [[-BX + 0.02, -BY, 0], [0, 1, 0], SIDE_N],
+    [[-BX + 0.02, BY, 0], [0, -1, 0], SIDE_N],
+  ];
+
+  // ===== 조종 보조·주행·플립 설정 (game.py와 같은 값) =====
+  const rad = (d) => d * Math.PI / 180;
+  const TILT_CMD = rad(25), YAW_RATE_CMD = 2.0, CLIMB = 1.5, SINK = 1.2;
+  const KP = [0.8, 2.6], KD = [0.15, 0.5, 0.4], KV = 4.0, BRAKE_GAIN = 0.15;
+  const TOUCH_VZ = 0.12, GLIDE_GAIN = 0.8, TOUCH_OFFSET = 0.06, SLOW_ZONE = 0.3;
+  const READY_VH = 0.6, READY_TILT = rad(15), MIN_SINK_FRAC = 0.3;
+  const HANDOFF_TILT = rad(25), HANDOFF_W = rad(120), KV_TOUCHDOWN = 8.0;
+  const LOW_TILT_H = 0.4, SIDE_BRAKE = 3.0;
+  const DRIVE_F = 25.0, DRIVE_DRAG = 4.0, PARK_BRAKE = 25.0, GRIP = 10.0, STEER_RATE = 2.2;
+  const FLIP = 2 * Math.PI, MIN_AIR = 0.1;
+  const AIRFLIP_MIN_H = { roll: 0.8, pitch: 1.0 }, AIRFLIP_FAKE_H = { roll: 0.25, pitch: 0.25 };
+  const FRONT_MIN_Z = 0.35, NEXT_FLIP_MIN_H = 0.8;
+  const SETTLE_W = rad(150), SETTLE_TILT = rad(20), SETTLE_MAX_T = 0.8, MAX_EXTRA_FLIPS = 1;
+  const FLIP_NAMES = { 2: 'DOUBLE', 3: 'TRIPLE', 4: 'QUAD' };
+
+  // ===== 충돌 (게임용 근사: 차체 표면 26점 vs 바닥·코스 상자, 스프링-댐퍼) =====
+  const CONTACT_K = 30000, CONTACT_C = 300, FRICTION = 0.03;   // 차체 마찰은 MuJoCo 게임과 같이 낮게
+  const PROBES = [];
+  for (const sx of [-1, 0, 1]) for (const sy of [-1, 0, 1]) for (const sz of [-1, 0, 1])
+    if (sx || sy || sz) PROBES.push([sx * BX, sy * BY, sz * BZ]);
+  const rotY = (a) => [[Math.cos(a), 0, Math.sin(a)], [0, 1, 0], [-Math.sin(a), 0, Math.cos(a)]];
+  const I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  // 코스: [이름, 중심, 반치수, 회전, 판(얇은 판이면 항상 윗면 방향으로 밀어냄)]  (game.py COURSE와 같음. 패드는 보기용만)
+  const COURSE = [
+    ['ramp', [3.8, 0, 0.17], [0.8, 0.6, 0.02], rotY(rad(-13)), true],
+    ['deck1', [10, 0, 0.15], [0.6, 0.6, 0.15], I3, false],
+    ['deck2', [12.5, 0, 0.3], [0.5, 0.5, 0.3], I3, false],
+    ['wall', [15, 0, 0.25], [0.05, 1.5, 0.25], I3, false],
+  ];
+  const PAD = [17.5, 0];
+
+  // ===== 작은 선형대수 =====
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const scl = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => Math.hypot(a[0], a[1], a[2]);
+  const mv = (R, v) => [dot(R[0], v), dot(R[1], v), dot(R[2], v)];
+  const mtv = (R, v) => [R[0][0] * v[0] + R[1][0] * v[1] + R[2][0] * v[2],
+    R[0][1] * v[0] + R[1][1] * v[1] + R[2][1] * v[2], R[0][2] * v[0] + R[1][2] * v[1] + R[2][2] * v[2]];
+  const mm = (A, B) => A.map((r) => [0, 1, 2].map((j) => r[0] * B[0][j] + r[1] * B[1][j] + r[2] * B[2][j]));
+  const tr = (A) => [0, 1, 2].map((i) => [A[0][i], A[1][i], A[2][i]]);
+  const clip = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+  const quatMat = ([w, x, y, z]) => [
+    [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+    [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+    [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]];
+  const quatMul = (a, b) => [
+    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0]];
+  const rotAxis = (axis, a) => {
+    const c = Math.cos(a), s = Math.sin(a);
+    return axis === 'x' ? [[1, 0, 0], [0, c, -s], [0, s, c]]
+      : axis === 'y' ? [[c, 0, s], [0, 1, 0], [-s, 0, c]] : [[c, -s, 0], [s, c, 0], [0, 0, 1]];
+  };
+
+  // ===== RL 정책 (SB3 PPO MlpPolicy: tanh 128-128, 결정적 출력을 0~1로 자름) =====
+  function makePolicy(p) {
+    const layer = (W, b, x, act) => W.map((row, i) => {
+      let s = b[i];
+      for (let j = 0; j < row.length; j++) s += row[j] * x[j];
+      return act ? Math.tanh(s) : s;
+    });
+    return (obs) => layer(p.W2, p.b2, layer(p.W1, p.b1, layer(p.W0, p.b0, obs, true), true), false)
+      .map((a) => clip(a, 0, 1));
+  }
+
+  class Game {
+    constructor(policies, rng = Math.random) {
+      this.pol = { lander: makePolicy(policies.lander), roll: makePolicy(policies.flip),
+        pitch: makePolicy(policies.frontflip) };
+      this.rng = rng;
+      this.infiniteGas = true;
+      this.msg = ''; this.msgId = 0;
+      this.reset();
+    }
+
+    // ---------- 상태 ----------
+    reset() {
+      this.pos = [0, 0, BZ]; this.quat = [1, 0, 0, 0]; this.vel = [0, 0, 0]; this.omega = [0, 0, 0];
+      this.time = 0;
+      this.queue = Array.from({ length: DELAY_STEPS }, () => new Array(8).fill(0));
+      this.gas = 0; this.mode = 'drive'; this.act = new Array(8).fill(0); this.u = new Array(8).fill(0);
+      this.sub = 0; this.touchMsg = ''; this.touchV = 0; this.ext = { f: [0, 0, 0], t: [0, 0, 0] };
+      this.theta = [0, 0]; this.airborne = false; this.flipped = false; this.flipAxis = 'roll';
+      this.flipCount = 0; this.flipsLeft = 0; this.flipT0 = 0; this.settleT0 = 0; this.tOff = 0;
+      this.R = quatMat(this.quat); this.grounded = false; this.contacts();
+    }
+
+    say(text) { this.msg = text; this.msgId++; }
+    gasLeft() { return this.infiniteGas ? Infinity : Math.max(0, TANK_G - this.gas); }
+    tilt() { return Math.acos(clip(this.R[2][2], -1, 1)); }
+
+    // 바로 아래 지면까지 COM 높이 (단상 위에서도 RL이 평지처럼 느끼게) — MuJoCo mj_ray와 같은 역할
+    height() {
+      const o = this.pos;
+      let best = o[2] >= 0 ? o[2] : Infinity;
+      for (const [, c, h, Rm] of COURSE) {
+        const ol = mtv(Rm, sub(o, c)), dl = mtv(Rm, [0, 0, -1]);
+        let t0 = -Infinity, t1 = Infinity;
+        let miss = false;
+        for (let k = 0; k < 3; k++) {
+          if (Math.abs(dl[k]) < 1e-12) { if (Math.abs(ol[k]) > h[k]) miss = true; continue; }
+          let a = (-h[k] - ol[k]) / dl[k], b = (h[k] - ol[k]) / dl[k];
+          if (a > b) [a, b] = [b, a];
+          t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+        }
+        if (!miss && t1 >= Math.max(t0, 0) && t0 >= 0) best = Math.min(best, t0);
+      }
+      return best === Infinity ? o[2] : best;
+    }
+
+    landerObs() {
+      const R = this.R;
+      return [...R[0], ...R[1], ...R[2], ...this.omega, this.height(), ...this.vel, 1 - this.gas / TANK_G];
+    }
+    flipObs() {
+      return [...this.landerObs(), this.theta[0] / FLIP, this.theta[1] / FLIP, +this.airborne, +this.flipped];
+    }
+
+    // ---------- 물리 ----------
+    contacts() {
+      // 바닥·코스 상자와의 침투를 스프링-댐퍼 힘으로 (월드 힘, 월드 토크 반환)
+      const R = this.R, wW = mv(R, this.omega);
+      let F = [0, 0, 0], T = [0, 0, 0], touching = false;
+      for (const p of PROBES) {
+        const r = mv(R, p), x = add(this.pos, r), v = add(this.vel, cross(wW, r));
+        const hits = [];
+        if (x[2] < 1e-4) hits.push([-x[2], [0, 0, 1]]);
+        for (const [, c, h, Rm, plate] of COURSE) {
+          const l = mtv(Rm, sub(x, c));
+          const pen = [h[0] - Math.abs(l[0]), h[1] - Math.abs(l[1]), h[2] - Math.abs(l[2])];
+          if (pen[0] > -1e-4 && pen[1] > -1e-4 && pen[2] > -1e-4) {
+            const k = plate ? 2 : pen.indexOf(Math.min(...pen));   // 경사로 모서리에 걸리지 않고 위로 타고 오르게
+            const nl = [0, 0, 0]; nl[k] = Math.sign(l[k]) || 1;
+            hits.push([pen[k], mv(Rm, nl)]);
+          }
+        }
+        for (const [pen, n] of hits) {
+          touching = true;
+          if (pen <= 0) continue;
+          const vn = dot(v, n);
+          const fn = Math.max(0, CONTACT_K * pen - CONTACT_C * vn);
+          const vt = sub(v, scl(n, vn)), s = norm(vt);
+          const ft = s > 1e-9 ? scl(vt, -Math.min(FRICTION * fn, 50 * s) / s) : [0, 0, 0];
+          const f = add(scl(n, fn), ft);
+          F = add(F, f); T = add(T, cross(r, f));
+        }
+      }
+      this.grounded = touching;
+      return [F, T];
+    }
+
+    step() {
+      // MuJoCo Euler 적분과 같은 순서: 현재 상태로 힘 → 속도 갱신 → 새 속도로 위치·자세 갱신
+      const R = this.R;
+      const [Fc, Tc] = this.contacts();
+      let Fb = [0, 0, 0], Tb = [0, 0, 0];
+      for (let i = 0; i < 8; i++) {
+        if (!this.u[i]) continue;
+        const [p, d, Fmax] = THRUSTERS[i];
+        const f = scl(d, Fmax * this.u[i]);
+        Fb = add(Fb, f); Tb = add(Tb, cross(p, f));
+      }
+      const Fw = add(add(add(mv(R, Fb), Fc), this.ext.f), [0, 0, -M * GRAV]);
+      const tau = add(Tb, mtv(R, add(Tc, this.ext.t)));
+      const w = this.omega, Iw = [INERTIA[0] * w[0], INERTIA[1] * w[1], INERTIA[2] * w[2]];
+      const rhs = sub(tau, cross(w, Iw));
+      this.vel = add(this.vel, scl(Fw, DT / M));
+      this.omega = [w[0] + DT * rhs[0] / INERTIA[0], w[1] + DT * rhs[1] / INERTIA[1], w[2] + DT * rhs[2] / INERTIA[2]];
+      this.pos = add(this.pos, scl(this.vel, DT));
+      const wn = norm(this.omega), ang = wn * DT;
+      if (ang > 0) {
+        const s = Math.sin(ang / 2) / wn;
+        this.quat = quatMul(this.quat, [Math.cos(ang / 2), this.omega[0] * s, this.omega[1] * s, this.omega[2] * s]);
+      }
+      const qn = Math.hypot(...this.quat); this.quat = this.quat.map((c) => c / qn);
+      this.R = quatMat(this.quat);
+      this.time += DT;
+    }
+
+    // ---------- 조종 보조 ----------
+    assist(keys) {
+      const R = this.R, w = this.omega, v = this.vel;
+      const psi = Math.atan2(R[1][0], R[0][0]);
+      const h = this.height() - BZ;
+      const tiltMax = TILT_CMD * clip(h / LOW_TILT_H, 0.3, 1.0);
+      let pitchD = tiltMax * (keys.W - keys.S), rollD = tiltMax * (keys.D - keys.A);
+      let side = SIDE_N * 2 * (keys.A - keys.D);
+      const hold = this.mode === 'fly' || this.mode === 'auto_land';
+      if (hold && !(keys.W || keys.S || keys.A || keys.D)) {
+        const vf = v[0] * Math.cos(psi) + v[1] * Math.sin(psi);
+        const vl = -v[0] * Math.sin(psi) + v[1] * Math.cos(psi);
+        pitchD = clip(-BRAKE_GAIN * vf, -tiltMax, tiltMax);
+        rollD = clip(BRAKE_GAIN * vl, -tiltMax, tiltMax);
+        side = clip(-SIDE_BRAKE * vl, -2 * SIDE_N, 2 * SIDE_N);
+      }
+      const Rd = mm(mm(rotAxis('z', psi), rotAxis('y', pitchD)), rotAxis('x', rollD));
+      const A = mm(tr(Rd), R), B = mm(tr(R), Rd);
+      const e = [0.5 * (A[2][1] - B[2][1]), 0.5 * (A[0][2] - B[0][2])];
+      const rD = YAW_RATE_CMD * (keys.Q - keys.E);
+      const tau = [-KP[0] * e[0] - KD[0] * w[0], -KP[1] * e[1] - KD[1] * w[1], -KD[2] * (w[2] - rD)];
+
+      let collective = 0;
+      if (hold && R[2][2] > 0.2) {
+        let vzD = CLIMB * keys.SPACE;
+        if (keys.C && !keys.SPACE) {
+          // 착지: 멈추지 않고 계속 내려오면서 수평·감속을 함께 맞춤 (절대 다시 올라가지 않음)
+          const vh = Math.hypot(v[0], v[1]);
+          const ready = clip(1 - vh / READY_VH, 0, 1) * clip(1 - this.tilt() / READY_TILT, 0, 1);
+          const glide = clip(TOUCH_VZ + GLIDE_GAIN * Math.max(0, h - TOUCH_OFFSET), TOUCH_VZ, SINK);
+          vzD = -glide * (h > SLOW_ZONE ? 1 : MIN_SINK_FRAC + (1 - MIN_SINK_FRAC) * ready);
+        }
+        const kv = (this.mode === 'auto_land' || keys.C) ? KV_TOUCHDOWN : KV;
+        const fz = M * (GRAV + kv * (vzD - v[2]));
+        collective = clip(fz / Math.max(R[2][2], 0.5), 0, 4 * NOZZLE_N);
+      }
+      const sx = [1, 1, -1, -1], sy = [1, -1, 1, -1];
+      const f = sx.map((_, i) => collective / 4 + tau[0] * sy[i] / (4 * WHEEL_Y) - tau[1] * sx[i] / (4 * WHEEL_X));
+      const lift = Math.max(0, -Math.min(...f));
+      const act = f.map((x) => clip((x + lift) / NOZZLE_N, 0, 1));
+      if (this.mode === 'ballistic') side = 0;
+      const ff = clip((side + tau[2] / YAW_ARM) / 2, -SIDE_N, SIDE_N);
+      const fr = clip((side - tau[2] / YAW_ARM) / 2, -SIDE_N, SIDE_N);
+      act.push(Math.max(ff, 0) / SIDE_N, Math.max(-ff, 0) / SIDE_N, Math.max(fr, 0) / SIDE_N, Math.max(-fr, 0) / SIDE_N);
+      return act;
+    }
+
+    drive(keys) {
+      // 땅 위 아케이드 주행: 전진력 + 옆미끄럼 억제 + 조향 토크 (월드 좌표 외력)
+      this.ext = { f: [0, 0, 0], t: [0, 0, 0] };
+      const R = this.R;
+      if (this.mode !== 'drive' || !this.grounded || R[2][2] < 0.8) return;
+      const psi = Math.atan2(R[1][0], R[0][0]);
+      const h = [Math.cos(psi), Math.sin(psi), 0], n = [-Math.sin(psi), Math.cos(psi), 0];
+      const vf = dot(this.vel, h), vl = dot(this.vel, n);
+      const drag = (keys.W || keys.S) ? DRIVE_DRAG : PARK_BRAKE;
+      const F = sub(scl(h, DRIVE_F * (keys.W - keys.S) - drag * vf), scl(n, M * GRIP * vl));
+      const rD = STEER_RATE * (keys.A - keys.D) * clip(vf / 1.5, -1, 1) + YAW_RATE_CMD * (keys.Q - keys.E);
+      this.ext = { f: F, t: [0, 0, 0.6 * (rD - this.omega[2])] };   // game.py와 같이 몸체 z 회전속도 사용
+    }
+
+    // ---------- 제어: 10 ms마다 판단, 물리는 1 ms씩 ----------
+    tick(keys) {
+      if (this.sub === 0) this.decide(keys);
+      const end = this.physicsStep(keys);
+      this.sub++;
+      if (end || this.sub >= CTRL_EVERY) { this.sub = 0; this.updateMode(keys); return true; }
+      return false;
+    }
+    control(keys) { while (!this.tick(keys)); }
+
+    decide(keys) {
+      let act;
+      if (this.mode === 'rl_land') act = this.pol.lander(this.landerObs());
+      else if (this.mode === 'rl_flip') act = this.pol[this.flipAxis](this.flipObs());
+      else if (this.mode === 'rl_airflip') {
+        const obs = this.flipObs(); obs[12] = AIRFLIP_FAKE_H[this.flipAxis];
+        act = this.pol[this.flipAxis](obs);
+      } else if (this.mode === 'drive') {
+        act = [0, 0, 0, 0, keys.Q, keys.E, keys.E, keys.Q];   // 땅 위 Q/E: 요 노즐로 제자리 회전
+      } else {
+        if (this.mode === 'auto_land') keys = { W: 0, S: 0, A: 0, D: 0, Q: 0, E: 0, SPACE: 0, C: 1 };
+        act = this.assist(keys);
+      }
+      this.act = act.map((a) => clip(a, 0, 1));
+    }
+
+    physicsStep(keys) {
+      this.drive(keys);
+      this.queue.push(this.act);
+      const head = this.queue.shift();
+      this.u = this.gasLeft() > 0 ? head.slice() : new Array(8).fill(0);
+      if (!this.infiniteGas) this.gas += this.u.reduce((s, x, i) => s + x * THRUSTERS[i][2], 0) * FLOW_PER_N * DT;
+      const vzBefore = this.vel[2];
+      this.step();
+      if (!this.grounded) this.touchV = -vzBefore;
+      const R22 = this.R[2][2];
+      if (this.mode === 'rl_airflip' && this.flipped) {
+        const calm = norm(this.omega) < SETTLE_W && R22 > Math.cos(SETTLE_TILT);
+        if (calm || this.time - this.settleT0 > SETTLE_MAX_T) {
+          const n = this.flipCount;
+          this.mode = 'fly';
+          this.say(n > 1 ? `${FLIP_NAMES[n] || 'x' + n} AIR FLIP!` : 'AIR FLIP!');
+          return true;
+        }
+      } else if (this.mode === 'rl_airflip') {
+        this.theta[0] += this.omega[0] * DT; this.theta[1] += this.omega[1] * DT;
+        if (this.flipProgress() >= FLIP) {
+          this.flipCount++;
+          if (this.flipsLeft > 0 && this.height() - BZ >= NEXT_FLIP_MIN_H) {
+            this.flipsLeft--; this.theta = [0, 0]; this.flipT0 = this.time;
+          } else if (this.flipAxis === 'pitch') {
+            const n = this.flipCount;
+            this.mode = 'fly';
+            this.say(n > 1 ? `${FLIP_NAMES[n] || 'x' + n} AIR FRONT FLIP!` : 'AIR FRONT FLIP!');
+            return true;
+          } else { this.flipped = true; this.settleT0 = this.time; }
+        }
+      }
+      if (this.mode === 'rl_flip') {
+        if (this.flipAxis !== 'pitch' || this.height() >= FRONT_MIN_Z) {
+          this.theta[0] += this.omega[0] * DT; this.theta[1] += this.omega[1] * DT;
+        }
+        if (this.flipProgress() >= FLIP) this.flipped = true;
+        if (!this.grounded && !this.airborne) { this.airborne = true; this.tOff = this.time; }
+        if (this.airborne && this.grounded) {
+          if (this.time - this.tOff > MIN_AIR) {
+            this.mode = 'drive';
+            this.say(this.flipped ? this.flipLabel() : 'landed (no flip)');
+            return true;
+          }
+          this.airborne = false;
+        }
+      }
+      return false;
+    }
+
+    flipLabel() {
+      const laps = Math.floor(Math.max(Math.abs(this.theta[0]), Math.abs(this.theta[1])) / FLIP + 0.1);
+      const kind = this.flipAxis === 'pitch' ? 'FRONT FLIP' : 'FLIP';
+      return `${FLIP_NAMES[laps] ? FLIP_NAMES[laps] + ' ' : ''}${kind} LANDED`;
+    }
+
+    handoffReady() {
+      // 땅 근처 + 어느 정도 수평 + 회전이 잦아듦 → 마지막 착지는 자동 착지에 맡김
+      const vz = this.vel[2];
+      const near = this.height() - BZ < 0.35 + Math.max(0, -vz) ** 2 / 20;
+      const calm = this.R[2][2] > Math.cos(HANDOFF_TILT) && norm(this.omega) < HANDOFF_W;
+      return near && calm && !this.grounded;
+    }
+
+    updateMode(keys) {
+      if (this.mode === 'rl_land' && this.handoffReady()) {
+        this.mode = 'auto_land'; this.touchMsg = 'RL LANDED';
+      } else if (this.mode === 'ballistic' && this.vel[2] < -0.3 && this.handoffReady()) {
+        this.mode = 'auto_land'; this.touchMsg = 'LANDED';
+      } else if (this.mode === 'rl_flip' && this.flipped && this.airborne && this.handoffReady()) {
+        this.mode = 'auto_land'; this.touchMsg = this.flipLabel();
+      }
+      if (this.mode === 'auto_land' && this.grounded) {
+        this.mode = 'drive'; this.say(`${this.touchMsg}  (${this.touchV.toFixed(2)} m/s)`);
+      } else if (this.mode === 'rl_land' && this.grounded) {
+        this.mode = 'drive'; this.say(`RL LANDED  tilt ${(this.tilt() * 180 / Math.PI).toFixed(1)} deg`);
+      } else if ((this.mode === 'fly' || this.mode === 'ballistic') && this.grounded && !keys.SPACE) {
+        this.mode = 'drive';
+      } else if (this.mode === 'drive' && !this.grounded) {
+        this.mode = 'ballistic';
+      }
+      if (this.mode === 'rl_flip' && this.time - this.flipT0 > 5.0) this.mode = 'ballistic';
+      if (this.mode === 'rl_airflip' && (this.grounded || this.time - this.flipT0 > 2.0 + SETTLE_MAX_T)) {
+        this.mode = this.grounded ? 'drive' : 'fly'; this.say('air flip failed');
+      }
+      if (this.pos[2] < -1 || Math.abs(this.pos[1]) > 19 || Math.abs(this.pos[0]) > 59) {
+        this.reset(); this.say('out of bounds - reset');
+      }
+    }
+
+    // ---------- 플립·던지기 ----------
+    flipProgress() {
+      return this.flipAxis === 'pitch' ? Math.abs(this.theta[1])
+        : Math.max(Math.abs(this.theta[0]), Math.abs(this.theta[1]));
+    }
+
+    startFlip(axis) {
+      const name = axis === 'pitch' ? 'front flip' : 'flip';
+      if (this.mode === 'rl_airflip') {
+        if (this.flipAxis === 'pitch') this.say('front flip: single only');
+        else if (this.flipsLeft < MAX_EXTRA_FLIPS && !this.flipped) {
+          this.flipsLeft++;
+          this.say(`${FLIP_NAMES[this.flipCount + this.flipsLeft + 1] || ''} ${name.toUpperCase()}!`);
+        }
+        return;
+      }
+      const groundOk = this.grounded && this.R[2][2] > 0.95 && norm(this.vel) < 0.5;
+      const airOk = (this.mode === 'fly' || this.mode === 'ballistic') && this.height() - BZ >= AIRFLIP_MIN_H[axis];
+      if (!(groundOk || airOk)) {
+        this.say(!this.grounded ? `air ${name} needs ${AIRFLIP_MIN_H[axis].toFixed(1)} m+` : `${name}: stop on level ground first`);
+        return;
+      }
+      this.flipAxis = axis;
+      this.mode = groundOk ? 'rl_flip' : 'rl_airflip';
+      this.flipT0 = this.time; this.theta = [0, 0];
+      this.airborne = !groundOk; this.flipped = false; this.flipCount = 0; this.flipsLeft = 0;
+      this.say(`RL ${groundOk ? 'jump' : 'air'} ${name}!`);
+    }
+
+    randomThrow() {
+      // 막 던지기 학습 범위(월드 +x로 3~7 m/s, 위로 1.5~3 m/s, 무작위 자세, 각 축 ±360°/s)
+      const u = (a, b) => a + (b - a) * this.rng();
+      const gauss = () => Math.sqrt(-2 * Math.log(1 - this.rng())) * Math.cos(2 * Math.PI * this.rng());
+      const surface = this.pos[2] - this.height();
+      this.pos[2] = surface + u(0.25, 0.45);
+      const q = [gauss(), gauss(), gauss(), gauss()], qn = Math.hypot(...q);
+      this.quat = q.map((c) => c / qn); this.R = quatMat(this.quat);
+      this.vel = [u(3, 7), u(-0.5, 0.5), u(1.5, 3.0)];
+      this.omega = [rad(u(-360, 360)), rad(u(-360, 360)), rad(u(-360, 360))];
+      this.queue = Array.from({ length: DELAY_STEPS }, () => new Array(8).fill(0));
+      this.mode = 'rl_land';
+      this.say('THROWN!  RL catching...');
+    }
+
+    onKey(k) {
+      if (k === 'R') { this.reset(); this.say('reset'); }
+      else if (k === 'SPACE' && (this.mode === 'drive' || this.mode === 'ballistic')) this.mode = 'fly';
+      else if (k === 'L') {
+        if (this.grounded) this.say('L works in the air');
+        else { this.mode = 'rl_land'; this.say('RL auto-landing'); }
+      } else if (k === 'F' || k === 'G') this.startFlip(k === 'F' ? 'roll' : 'pitch');
+      else if (k === 'X') this.randomThrow();
+      else if (k === 'T') {
+        this.infiniteGas = !this.infiniteGas; this.gas = 0;
+        this.say(this.infiniteGas ? 'gas: infinite' : `gas: real tank ${TANK_G} g`);
+      }
+    }
+  }
+
+  return { Game, THRUSTERS, COURSE, PAD, BX, BY, BZ, TANK_G, DT, quatMat, makePolicy, FLIP };
+})();
+if (typeof module !== 'undefined') module.exports = SIM;
+
+</script>
+<script>
+// 화면·입력: three.js 렌더링 (z축이 위), HUD, 키보드·마우스·터치. 시뮬레이션은 sim.js의 SIM.Game
+(() => {
+  const { Game, THRUSTERS, COURSE, PAD, BX, BY, BZ, TANK_G } = SIM;
+  THREE.Object3D.DefaultUp.set(0, 0, 1);
+  const $ = (id) => document.getElementById(id);
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  // ---------- 렌더러·장면 ----------
+  const canvas = $('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.95;
+  const scene = new THREE.Scene();
+  const SKY_TOP = new THREE.Color(css('--sky-top')), SKY_HORIZON = new THREE.Color(css('--sky-horizon'));
+  scene.fog = new THREE.Fog(SKY_HORIZON, 14, 60);
+  {
+    // 하늘: 위는 짙은 파랑, 지평선은 옅은 회청색 그라데이션
+    const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+    const x = c.getContext('2d'), grad = x.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#' + SKY_TOP.getHexString()); grad.addColorStop(1, '#' + SKY_HORIZON.getHexString());
+    x.fillStyle = grad; x.fillRect(0, 0, 4, 256);
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16),
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false }));
+    sky.rotation.x = Math.PI / 2;
+    scene.add(sky);
+  }
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 400);
+  camera.up.set(0, 0, 1);
+
+  scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x5a5650, 0.75));
+  const sun = new THREE.DirectionalLight(0xfff1dc, 1.55);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -3, right: 3, top: 3, bottom: -3, near: 0.1, far: 20 });
+  sun.shadow.bias = -0.0004;
+  scene.add(sun, sun.target);
+  const fill = new THREE.DirectionalLight(0xbcd2ff, 0.35);
+  fill.position.set(4, 4, 3);
+  scene.add(fill);
+
+  // ---------- 바닥·코스 ----------
+  {
+    const c = document.createElement('canvas'); c.width = c.height = 512;
+    const x = c.getContext('2d');
+    for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+      x.fillStyle = (i + j) % 2 ? '#6d7177' : '#62666c'; x.fillRect(i * 256, j * 256, 256, 256);
+    }
+    x.strokeStyle = 'rgba(255,255,255,0.06)'; x.lineWidth = 2;
+    for (let k = 0; k <= 512; k += 64) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k, 512); x.moveTo(0, k); x.lineTo(512, k); x.stroke(); }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(60, 20);
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); tex.encoding = THREE.sRGBEncoding;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 40),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, metalness: 0 }));
+    floor.receiveShadow = true;
+    scene.add(floor);
+  }
+  const courseMat = {
+    ramp: new THREE.MeshStandardMaterial({ color: 0xe0761a, roughness: 0.6 }),
+    deck1: new THREE.MeshStandardMaterial({ color: 0x8c949e, roughness: 0.8 }),
+    deck2: new THREE.MeshStandardMaterial({ color: 0x8c949e, roughness: 0.8 }),
+    wall: new THREE.MeshStandardMaterial({ color: 0xd8382d, roughness: 0.7 }),
+  };
+  for (const [name, c, h, Rm] of COURSE) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2 * h[0], 2 * h[1], 2 * h[2]), courseMat[name]);
+    mesh.position.set(...c);
+    mesh.setRotationFromMatrix(new THREE.Matrix4().set(...Rm[0], 0, ...Rm[1], 0, ...Rm[2], 0, 0, 0, 0, 1));
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+  {
+    // 목표 패드: 흰 원판 + 파란 안쪽 원 + 십자
+    const pad = new THREE.Group(); pad.position.set(PAD[0], PAD[1], 0.003);
+    const disc = (r, color, z) => {
+      const m = new THREE.Mesh(new THREE.CircleGeometry(r, 48), new THREE.MeshStandardMaterial({ color, roughness: 0.5 }));
+      m.position.z = z; m.receiveShadow = true; pad.add(m);
+    };
+    disc(0.6, 0xf3f4f6, 0); disc(0.35, 0x1d72d8, 0.001);
+    for (const [w, hgt] of [[0.5, 0.04], [0.04, 0.5]]) {
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(w, hgt), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      bar.position.z = 0.002; pad.add(bar);
+    }
+    scene.add(pad);
+  }
+  {
+    // 거리 표시: 출발점에서 2 m마다 코스 옆 바닥에 숫자
+    const label = (text) => {
+      const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+      const x = c.getContext('2d'); x.fillStyle = 'rgba(255,255,255,0.75)';
+      x.font = '600 40px "IBM Plex Mono", monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(text, 64, 32);
+      return new THREE.CanvasTexture(c);
+    };
+    for (let d = 2; d <= 20; d += 2) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.25),
+        new THREE.MeshBasicMaterial({ map: label(`${d} m`), transparent: true, depthWrite: false }));
+      m.position.set(d, -0.9, 0.002);
+      scene.add(m);
+      const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.3), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
+      tick.position.set(d, -0.62, 0.002);
+      scene.add(tick);
+    }
+  }
+
+  // ---------- 차 (landing_env.car_xml과 같은 치수, 질량·충돌 없는 보기용) ----------
+  const car = new THREE.Group();
+  scene.add(car);
+  const MAT = {
+    paint: new THREE.MeshPhysicalMaterial({ color: 0xf2f3f5, roughness: 0.28, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.12 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: 0x0c0f14, roughness: 0.08, metalness: 0.4, clearcoat: 1 }),
+    chassis: new THREE.MeshStandardMaterial({ color: 0x1d1f23, roughness: 0.7 }),
+    tire: new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.9 }),
+    rim: new THREE.MeshStandardMaterial({ color: 0xa8adb6, roughness: 0.25, metalness: 0.9 }),
+    metal: new THREE.MeshStandardMaterial({ color: 0xbfc4cc, roughness: 0.3, metalness: 0.85 }),
+    head: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+    tail: new THREE.MeshBasicMaterial({ color: 0xff1a12 }),
+    glowW: new THREE.MeshBasicMaterial({ color: 0xd8ecff, transparent: true, opacity: 0.35, depthWrite: false }),
+    glowR: new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.4, depthWrite: false }),
+  };
+  const z0 = -BZ;
+  const part = (geo, mat, pos, scale) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(...pos); if (scale) m.scale.set(...scale);
+    m.castShadow = mat !== MAT.glowW && mat !== MAT.glowR && mat !== MAT.head && mat !== MAT.tail;
+    m.receiveShadow = true;
+    car.add(m); return m;
+  };
+  const box = (half, mat, pos) => part(new THREE.BoxGeometry(2 * half[0], 2 * half[1], 2 * half[2]), mat, pos);
+  const UNIT_SPHERE = new THREE.SphereGeometry(1, 40, 24);
+  const ell = (r, mat, pos) => part(UNIT_SPHERE, mat, pos, r);
+  box([0.165, 0.084, 0.006], MAT.chassis, [0, 0, z0 + 0.008]);
+  box([0.15, 0.093, 0.02], MAT.paint, [0, 0, z0 + 0.032]);
+  ell([0.06, 0.093, 0.022], MAT.paint, [0.14, 0, z0 + 0.034]);
+  ell([0.065, 0.093, 0.026], MAT.paint, [-0.135, 0, z0 + 0.036]);
+  ell([0.2, 0.092, 0.03], MAT.paint, [0, 0, z0 + 0.048]);
+  ell([0.13, 0.074, 0.034], MAT.glass, [-0.02, 0, z0 + 0.066]);
+  box([0.006, 0.009, 0.004], MAT.glass, [0.055, 0.092, z0 + 0.072]);
+  box([0.006, 0.009, 0.004], MAT.glass, [0.055, -0.092, z0 + 0.072]);
+  box([0.004, 0.082, 0.006], MAT.glass, [0.195, 0, z0 + 0.046]);
+  box([0.004, 0.06, 0.004], MAT.chassis, [0.195, 0, z0 + 0.022]);
+  box([0.006, 0.088, 0.006], MAT.glass, [-0.193, 0, z0 + 0.054]);
+  const zf = z0 + 0.047, zr = z0 + 0.054;
+  box([0.002, 0.074, 0.0016], MAT.head, [0.1995, 0, zf]);
+  box([0.003, 0.079, 0.0042], MAT.glowW, [0.1955, 0, zf]);
+  for (const sy of [1, -1]) for (let i = 0; i < 3; i++) box([0.0015, 0.0032, 0.0022], MAT.head, [0.1995, sy * (0.05 + 0.009 * i), zf - 0.0042]);
+  for (let i = 0; i < 19; i++) box([0.0015, 0.0028, 0.0028], MAT.tail, [-0.1995, -0.08 + 0.16 * i / 18, zr]);
+  box([0.003, 0.086, 0.0055], MAT.glowR, [-0.1955, 0, zr]);
+  const WHEEL_R = 0.03, wz = z0 + WHEEL_R;
+  for (const sx of [1, -1]) for (const sy of [1, -1]) {
+    const tire = part(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.018, 32), MAT.tire, [sx * 0.14, sy * 0.091, wz]);
+    const rim = part(new THREE.CylinderGeometry(WHEEL_R * 0.72, WHEEL_R * 0.72, 0.0025, 32), MAT.rim, [sx * 0.14, sy * 0.10, wz]);
+    tire.rotation.z = rim.rotation.z = 0;   // CylinderGeometry 축은 y → 그대로 차축(y)
+  }
+  // 노즐 모양: 분사 방향으로 짧은 금속 원통
+  const axisQuat = (v) => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...v));
+  for (const [p, f, F] of THRUSTERS) {
+    const L = 0.012 + 0.0004 * F, r = 0.007 + 0.0003 * F;
+    const m = part(new THREE.CylinderGeometry(r, r * 0.85, L + 0.004, 20), MAT.metal,
+      [p[0] + f[0] * (L - 0.004) / 2, p[1] + f[1] * (L - 0.004) / 2, p[2] + f[2] * (L - 0.004) / 2]);
+    m.quaternion.copy(axisQuat(f));
+  }
+  const cockpitAnchor = new THREE.Object3D(); cockpitAnchor.position.set(0.07, 0, 0.078); car.add(cockpitAnchor);
+
+  // ---------- 냉가스 분사 (watch_landing.add_plumes와 같은 모양: 흰 코어 + 넓어지며 옅어지는 증기 9겹) ----------
+  const SEGS = 9, CORE = new THREE.Color(1, 1, 1), VAPOR = new THREE.Color(0.62, 0.82, 1);
+  const plumes = THRUSTERS.map(([p, f]) => {
+    const g = new THREE.Group();
+    g.position.set(...p);
+    g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-f[0], -f[1], -f[2]));
+    const mk = () => {
+      const m = new THREE.Mesh(UNIT_SPHERE, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, fog: true }));
+      m.renderOrder = 2; g.add(m); return m;
+    };
+    const core = mk(), vapor = Array.from({ length: SEGS }, mk);
+    car.add(g);
+    return { g, core, vapor };
+  });
+  function drawPlumes(u) {
+    plumes.forEach((pl, i) => {
+      const t = u[i], F = THRUSTERS[i][2] * t;
+      pl.g.visible = t >= 0.05;
+      if (!pl.g.visible) return;
+      const L = Math.min(0.7, 0.05 + 0.035 * F) * (1 + 0.12 * (Math.random() * 2 - 1));
+      const r0 = 0.006 + 0.0005 * F, dens = 0.35 + 0.65 * Math.sqrt(t);
+      pl.core.scale.set(r0 * 0.55, r0 * 0.55, L * 0.08); pl.core.position.set(0, 0, L * 0.08);
+      pl.core.material.color.copy(CORE); pl.core.material.opacity = 0.6 * dens;
+      const seg = L / SEGS;
+      pl.vapor.forEach((m, k) => {
+        const s = (k + 0.5) / SEGS, r = r0 * (1 + 5 * s ** 0.8) * (1 + 0.1 * (Math.random() * 2 - 1));
+        m.scale.set(r, r, seg * 1.1); m.position.set(0, 0, 0.01 + L * s);
+        m.material.color.copy(CORE).lerp(VAPOR, s);
+        m.material.opacity = dens * (0.26 * (1 - s) ** 1.6 + 0.025);
+      });
+    });
+  }
+
+  // r128은 재질·조명 색을 선형 값으로 받으므로, 위에서 쓴 sRGB 색 코드를 선형으로 바꿔 둔다 (안 하면 색이 바램)
+  scene.traverse((o) => {
+    if (o.isLight) o.color.convertSRGBToLinear();
+    if (o.isLight && o.groundColor) o.groundColor.convertSRGBToLinear();
+    [].concat(o.material || []).forEach((m) => {
+      if (m.userData.linear) return;
+      if (m.color && !m.map) m.color.convertSRGBToLinear();
+      m.userData.linear = true;
+    });
+  });
+  scene.fog.color.convertSRGBToLinear();
+  VAPOR.convertSRGBToLinear();
+
+  // ---------- 상태·입력 ----------
+  let game = null;
+  const keys = { W: 0, S: 0, A: 0, D: 0, Q: 0, E: 0, C: 0, SPACE: 0 };
+  const view = { mode: 1, dist: 1.6, az: 0, freeAz: 0, freeEl: -15, pan: new THREE.Vector3(), speed: 1, paused: false, carry: 0 };
+  const SPEEDS = [0.1, 0.25, 0.5, 1, 2];
+  const DIST = { 1: 1.6, 2: 2.6, 3: 6.5, 4: 1.6, 5: 1.6 };
+  const keyName = (e) => (e.code === 'Space' ? 'SPACE' : e.code.startsWith('Key') ? e.code.slice(3)
+    : e.code.startsWith('Digit') ? e.code.slice(5) : e.code === 'Minus' ? '-' : e.code === 'Equal' ? '=' : e.key);
+  const ACTIONS = new Set(['R', 'L', 'F', 'G', 'X', 'T', 'SPACE']);
+
+  function setSpeed(dir) {
+    let i = SPEEDS.reduce((b, v, k) => (Math.abs(v - view.speed) < Math.abs(SPEEDS[b] - view.speed) ? k : b), 0);
+    i = Math.max(0, Math.min(SPEEDS.length - 1, i + dir));
+    view.speed = SPEEDS[i]; game.say(`speed x${view.speed}`);
+  }
+  function enterFree() {
+    if (view.mode !== 5) { view.freeAz = view.camAz; view.freeEl = view.camEl; view.mode = 5; }
+  }
+  function press(k) {
+    if (!game) return;
+    if (k in keys) keys[k] = 1;
+    if (ACTIONS.has(k)) game.onKey(k);
+    else if (k === 'P') { view.paused = !view.paused; game.say(view.paused ? 'paused' : 'resumed'); }
+    else if (k === '-') setSpeed(-1);
+    else if (k === '=') setSpeed(1);
+    else if (['1', '2', '3', '4'].includes(k)) { view.mode = +k; view.dist = DIST[view.mode]; }
+    else if (k === '5') { if (view.mode === 5) view.pan.set(0, 0, 0); enterFree(); }
+    else if (k === 'H') $('help').hidden = !$('help').hidden;
+  }
+  const release = (k) => { if (k in keys) keys[k] = 0; };
+  window.addEventListener('keydown', (e) => {
+    const k = keyName(e);
+    if (['SPACE', 'ArrowUp', 'ArrowDown'].includes(k)) e.preventDefault();
+    if (!e.repeat) press(k);
+  });
+  window.addEventListener('keyup', (e) => release(keyName(e)));
+  window.addEventListener('blur', () => Object.keys(keys).forEach((k) => { keys[k] = 0; }));
+
+  // 마우스·터치: 왼쪽(한 손가락) 드래그 = 차 주위로 돌리기, 오른쪽 드래그 = 시점 옮기기, 휠·두 손가락 = 줌
+  const drag = { id: null, button: 0, x: 0, y: 0 }, pinch = new Map();
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pinch.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pinch.size === 1) { Object.assign(drag, { id: e.pointerId, button: e.button, x: e.clientX, y: e.clientY }); enterFree(); }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (pinch.has(e.pointerId) && pinch.size === 2) {
+      const [a, b] = [...pinch.values()], before = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      pinch.set(e.pointerId, [e.clientX, e.clientY]);
+      const [c, d] = [...pinch.values()], after = Math.hypot(c[0] - d[0], c[1] - d[1]);
+      if (before > 0) view.dist = Math.min(30, Math.max(0.4, view.dist * before / after));
+      return;
+    }
+    if (e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.button === 2) {
+      const a = view.freeAz * Math.PI / 180, k = 0.0015 * view.dist;
+      view.pan.add(new THREE.Vector3(-dx * k * Math.sin(a), dx * k * Math.cos(a), dy * k));   // 화면 오른쪽 = (sin a, −cos a, 0)
+    } else {
+      view.freeAz -= 0.3 * dx;
+      view.freeEl = Math.max(-89, Math.min(89, view.freeEl - 0.3 * dy));
+    }
+  });
+  const endPointer = (e) => { pinch.delete(e.pointerId); if (e.pointerId === drag.id) drag.id = null; };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.dist = Math.min(30, Math.max(0.4, view.dist * Math.pow(1.0015, e.deltaY))); }, { passive: false });
+
+  // 화면 버튼(터치용): data-hold = 누르는 동안, data-tap = 한 번
+  document.querySelectorAll('[data-hold],[data-tap]').forEach((btn) => {
+    const k = btn.dataset.hold || btn.dataset.tap;
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); btn.classList.add('on'); press(k); });
+    const up = () => { btn.classList.remove('on'); release(k); };
+    btn.addEventListener('pointerup', up); btn.addEventListener('pointercancel', up);
+  });
+  $('help-toggle').addEventListener('click', () => { $('help').hidden = !$('help').hidden; });
+  // 폰이나 낮은 창에서는 조작표가 화면을 가리므로 접어 두고 버튼으로 열게 함
+  if (window.matchMedia('(pointer: coarse)').matches || window.innerHeight < 760) $('help').hidden = true;
+
+  // ---------- HUD ----------
+  const MODE_NAME = { drive: 'Drive', fly: 'Fly · assist', ballistic: 'Airborne · auto-level', rl_land: 'RL auto-land',
+    rl_flip: 'RL jump flip', rl_airflip: 'RL air flip', auto_land: 'Touchdown · level & slow' };
+  const MODE_KIND = { drive: 'ground', fly: 'assist', ballistic: 'assist', auto_land: 'assist', rl_land: 'rl', rl_flip: 'rl', rl_airflip: 'rl' };
+  let lastMsgId = -1, msgUntil = 0, hudT = 0;
+  function hud(now) {
+    if (game.msgId !== lastMsgId) {
+      lastMsgId = game.msgId; msgUntil = now + 2600;
+      $('toast').textContent = game.msg; $('toast').hidden = !game.msg;
+    }
+    if (now > msgUntil) $('toast').hidden = true;
+    if (now - hudT < 80) return;
+    hudT = now;
+    const v = game.vel, deg = game.tilt() * 180 / Math.PI;
+    $('mode').textContent = MODE_NAME[game.mode] || game.mode;
+    $('mode').dataset.kind = MODE_KIND[game.mode] || 'ground';
+    $('v-speed').textContent = Math.hypot(...v).toFixed(1);
+    $('v-alt').textContent = Math.max(0, game.height() - BZ).toFixed(2);
+    $('v-tilt').textContent = deg.toFixed(0);
+    $('v-x').textContent = game.pos[0].toFixed(1);
+    $('v-time').textContent = view.paused ? 'paused' : `×${view.speed}`;
+    const inf = game.infiniteGas, left = game.gasLeft();
+    const frac = inf ? 1 : left / TANK_G;
+    $('gas-fill').style.width = `${(frac * 100).toFixed(1)}%`;
+    $('gas').dataset.level = inf ? 'inf' : frac > 0.6 ? 'ok' : frac > 0.3 ? 'mid' : 'low';
+    $('gas-text').textContent = inf ? 'Gas unlimited · T for real 190 g tank' : `${left.toFixed(0)} / ${TANK_G} g${left < 100 ? ' · flip needs ~100 g' : ''}`;
+    $('gas-mark').hidden = inf;
+  }
+
+  // ---------- 카메라 ----------
+  const tmpV = new THREE.Vector3();
+  function placeCamera() {
+    const R = game.R, heading = Math.atan2(R[1][0], R[0][0]) * 180 / Math.PI;
+    const target = new THREE.Vector3(game.pos[0], game.pos[1], game.pos[2] + 0.05);
+    let az, el;
+    if (view.mode === 4) {
+      cockpitAnchor.getWorldPosition(tmpV); camera.position.copy(tmpV);
+      const fwd = new THREE.Vector3(R[0][0], R[1][0], R[2][0]), up = new THREE.Vector3(R[0][2], R[1][2], R[2][2]);
+      camera.up.copy(up); camera.lookAt(tmpV.clone().add(fwd)); camera.fov = 80; camera.updateProjectionMatrix();
+      view.camAz = heading; view.camEl = -10;
+      return;
+    }
+    camera.up.set(0, 0, 1);
+    if (camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); }
+    if (view.mode === 1) { view.az += 0.08 * (((heading - view.az + 540) % 360) - 180); az = view.az; el = -14; }
+    else if (view.mode === 2) { az = 270; el = -8; }
+    else if (view.mode === 3) { az = 235; el = -28; }
+    else { az = view.freeAz; el = view.freeEl; target.add(view.pan); }
+    view.camAz = az; view.camEl = el;
+    const a = az * Math.PI / 180, e = el * Math.PI / 180;
+    camera.position.set(target.x - view.dist * Math.cos(e) * Math.cos(a), target.y - view.dist * Math.cos(e) * Math.sin(a),
+      target.z - view.dist * Math.sin(e));
+    camera.lookAt(target);
+  }
+
+  // ---------- 루프 ----------
+  function resize() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== Math.floor(w * renderer.getPixelRatio()) || canvas.height !== Math.floor(h * renderer.getPixelRatio())) {
+      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    }
+  }
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05); last = now;
+    if (!view.paused) {
+      view.carry += dt * view.speed;
+      const n = Math.floor(view.carry / SIM.DT); view.carry -= n * SIM.DT;
+      for (let i = 0; i < n; i++) game.tick(keys);
+    }
+    car.position.set(...game.pos);
+    car.quaternion.set(game.quat[1], game.quat[2], game.quat[3], game.quat[0]);
+    drawPlumes(game.u);
+    sun.position.set(game.pos[0] - 2, game.pos[1] - 3, game.pos[2] + 6);
+    sun.target.position.set(...game.pos);
+    resize(); placeCamera(); hud(now);
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+
+  fetch('policies.json').then((r) => {
+    if (!r.ok) throw new Error(`policies.json ${r.status}`);
+    return r.json();
+  }).then((pol) => {
+    game = new Game(pol);
+    window.roadster = { get game() { return game; }, view };   // 콘솔에서 상태 확인용
+    game.say('Ready · hold W to drive, Space to take off');
+    $('loading').hidden = true;
+    requestAnimationFrame((t) => { last = t; frame(t); });
+  }).catch((err) => {
+    $('loading').textContent = `Could not load the RL policies (${err.message}). Reload the page to try again.`;
+  });
+})();
+
+</script>

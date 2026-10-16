@@ -1,0 +1,11 @@
+# 파이썬 가상환경·캐시 (용량 큼, 각자 requirements.txt로 설치)
+.venv/
+__pycache__/
+*.pyc
+
+# 학습 중간 산출물 (다시 학습하면 생김)
+rl_landing/checkpoints/
+rl_landing/*.log
+
+# macOS
+.DS_Store

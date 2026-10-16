@@ -1,0 +1,43 @@
+
+<mujoco model="rc_cold_gas_v2">
+  <compiler autolimits="true"/>
+  <option timestep="0.001"/>
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 .2 .3" width="512" height="512"/>
+    <material name="grid" texture="grid" texrepeat="15 15" reflectance=".1"/>
+  </asset>
+  <default>
+    <site type="sphere" size="0.012" rgba=".5 .5 .5 1"/>
+    <default class="car">
+      <geom contype="1" conaffinity="0" friction="1.2 0.005 0.0001"/>
+      <default class="wheel">
+        <geom type="cylinder" size="0.055 0.02" euler="90 0 0" mass="0.08" rgba=".1 .1 .1 1"/>
+      </default>
+    </default>
+  </default>
+  <worldbody>
+    <light pos="0 0 6" dir="0 0 -1" directional="true"/>
+    <geom name="floor" type="plane" size="30 6 .1" material="grid"/>
+    <geom name="ramp" type="box" size="0.5 0.4 0.02" pos="0.4766867132594676 0 0.1522162192471162" euler="0 -20 0" rgba=".7 .5 .3 1"/>
+    <body name="car" childclass="car" pos="-2.0 0 0.09">
+      <freejoint name="root"/>
+      <geom name="chassis" type="box" size="0.22 0.09 0.03" mass="1.4" rgba=".2 .2 .2 1"/>
+      <site name="imu" size="0.005"/>
+      <body name="co2" pos="-0.06 0 0.045" euler="0 90 0">
+        <geom name="co2" type="cylinder" size="0.011 0.042" mass="0.041999999999999996" rgba=".8 .8 .85 1"/>
+      </body>
+      <geom name="regulator" type="box" size="0.02 0.015 0.015" pos="0.02 0 0.045" mass="0.08" rgba=".6 .6 .2 1"/>
+      <geom type="box" size="0.01 0.01 0.012" pos="0.2 0 0.045" mass="0.04" rgba=".3 .3 .6 1"/><geom type="box" size="0.01 0.01 0.012" pos="-0.2 0 0.045" mass="0.04" rgba=".3 .3 .6 1"/><geom type="box" size="0.01 0.01 0.012" pos="0 0.09 0.045" mass="0.04" rgba=".3 .3 .6 1"/><geom type="box" size="0.01 0.01 0.012" pos="0 -0.09 0.045" mass="0.04" rgba=".3 .3 .6 1"/><site name="thr_front" pos="0.2 0 0.065"/><site name="thr_rear" pos="-0.2 0 0.065"/><site name="thr_left" pos="0 0.09 0.065"/><site name="thr_right" pos="0 -0.09 0.065"/><body name="c_fl" pos="0.16 0.125 -0.03"><inertial pos="0 0 0" mass="0.02" diaginertia="1e-5 1e-5 1e-5"/><joint name="sus_fl" type="slide" axis="0 0 1" range="-0.03 0.03" stiffness="560.0" damping="15.0"/><body name="s_fl"><inertial pos="0 0 0" mass="0.02" diaginertia="1e-5 1e-5 1e-5"/><joint name="steer_fl" type="hinge" axis="0 0 1" range="-0.4 0.4" damping="0.03"/><body name="w_fl"><joint name="w_fl" type="hinge" axis="0 1 0" damping="1e-4"/><geom class="wheel"/></body></body></body><body name="c_fr" pos="0.16 -0.125 -0.03"><inertial pos="0 0 0" mass="0.02" diaginertia="1e-5 1e-5 1e-5"/><joint name="sus_fr" type="slide" axis="0 0 1" range="-0.03 0.03" stiffness="560.0" damping="15.0"/><body name="s_fr"><inertial pos="0 0 0" mass="0.02" diaginertia="1e-5 1e-5 1e-5"/><joint name="steer_fr" type="hinge" axis="0 0 1" range="-0.4 0.4" damping="0.03"/><body name="w_fr"><joint name="w_fr" type="hinge" axis="0 1 0" damping="1e-4"/><geom class="wheel"/></body></body></body><body name="c_rl" pos="-0.16 0.125 -0.03"><inertial pos="0 0 0" mass="0.02" diaginertia="1e-5 1e-5 1e-5"/><joint name="sus_rl" type="slide" axis="0 0 1" range="-0.03 0.03" stiffness="560.0" damping="15.0"/><body name="w_rl"><joint name="w_rl" type="hinge" axis="0 1 0" damping="1e-4"/><geom class="wheel"/></body></body><body name="c_rr" pos="-0.16 -0.125 -0.03"><inertial pos="0 0 0" mass="0.02" diaginertia="1e-5 1e-5 1e-5"/><joint name="sus_rr" type="slide" axis="0 0 1" range="-0.03 0.03" stiffness="560.0" damping="15.0"/><body name="w_rr"><joint name="w_rr" type="hinge" axis="0 1 0" damping="1e-4"/><geom class="wheel"/></body></body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="n_front" site="thr_front" gear="0 0 1 0 0 0" ctrlrange="0 1"/><motor name="n_rear" site="thr_rear" gear="0 0 1 0 0 0" ctrlrange="0 1"/><motor name="n_left" site="thr_left" gear="0 0 1 0 0 0" ctrlrange="0 1"/><motor name="n_right" site="thr_right" gear="0 0 1 0 0 0" ctrlrange="0 1"/>
+    <position name="steer_fl" joint="steer_fl" kp="2" ctrlrange="-0.35 0.35"/>
+    <position name="steer_fr" joint="steer_fr" kp="2" ctrlrange="-0.35 0.35"/>
+    <velocity name="d_fl" joint="w_fl" kv="0.02" forcerange="-0.6 0.6"/><velocity name="d_fr" joint="w_fr" kv="0.02" forcerange="-0.6 0.6"/><velocity name="d_rl" joint="w_rl" kv="0.02" forcerange="-0.6 0.6"/><velocity name="d_rr" joint="w_rr" kv="0.02" forcerange="-0.6 0.6"/>
+  </actuator>
+  <sensor>
+    <gyro name="gyro" site="imu"/>
+    <accelerometer name="acc" site="imu"/>
+  </sensor>
+</mujoco>
